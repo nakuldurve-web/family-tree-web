@@ -16,6 +16,7 @@ interface Person {
 interface Spouse {
   id: string;
   full_name: string;
+  alt_name: string;
   person_id: string;
   image_url: string;
 }
@@ -47,7 +48,7 @@ async function getTreeData(): Promise<TreeData | null> {
     const db = getDB();
     const [peopleRes, spousesRes, linksRes, galleriesRes] = await Promise.all([
       db.prepare("SELECT id, full_name, alt_name, parent_id, tooltip, image_url FROM people WHERE status = 'approved' ORDER BY created_at ASC").all(),
-      db.prepare('SELECT id, full_name, person_id, image_url FROM spouses ORDER BY id ASC').all(),
+      db.prepare('SELECT id, full_name, alt_name, person_id, image_url FROM spouses ORDER BY id ASC').all(),
       db.prepare('SELECT id, person_id, url, description, display_html FROM links ORDER BY id ASC').all(),
       db.prepare('SELECT id, description, gdrive_link, display_order FROM galleries ORDER BY display_order ASC, id ASC').all(),
     ]);

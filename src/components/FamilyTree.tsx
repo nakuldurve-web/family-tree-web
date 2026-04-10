@@ -23,6 +23,7 @@ interface Person {
 interface Spouse {
   id: string;
   full_name: string;
+  alt_name: string;
   person_id: string;
   image_url: string;
 }
@@ -273,6 +274,11 @@ function DetailPanel({ person, spouse, links, genLabel, onClose }: DetailPanelPr
                 <div style={{ fontWeight: 600, fontSize: 14, color: '#881337' }}>
                   {spouse.full_name}
                 </div>
+                {spouse.alt_name?.trim() && (
+                  <div style={{ fontSize: 12, fontStyle: 'italic', color: '#be185d', marginTop: 2 }}>
+                    ({spouse.alt_name.trim()})
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -571,9 +577,16 @@ export default function FamilyTree({ people, spouses, links }: Props) {
                     style={{ borderRadius: '50%', objectFit: 'cover', border: '2px solid #e11d48', flexShrink: 0 }}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
                   />
-                  <span style={{ fontSize: '11px', fontStyle: 'italic', color: '#be185d', wordBreak: 'break-word', lineHeight: 1.3 }}>
-                    {spouse.full_name}
-                  </span>
+                  <div>
+                    <div style={{ fontSize: '11px', fontStyle: 'italic', color: '#be185d', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                      {spouse.full_name}
+                    </div>
+                    {spouse.alt_name?.trim() && (
+                      <div style={{ fontSize: '9px', color: '#e11d48', opacity: 0.75, lineHeight: 1.2 }}>
+                        ({spouse.alt_name.trim()})
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

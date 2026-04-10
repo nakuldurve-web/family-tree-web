@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const db = getDB();
     const result = await db
-      .prepare('SELECT id, full_name, person_id, image_url FROM spouses ORDER BY person_id ASC')
+      .prepare('SELECT id, full_name, alt_name, person_id, image_url FROM spouses ORDER BY person_id ASC')
       .all();
     return Response.json({ spouses: result.results });
   } catch (err) {
@@ -22,6 +22,7 @@ export async function GET(request: Request) {
 interface SpouseBody {
   id: string;
   full_name: string;
+  alt_name?: string;
   person_id: string;
   image_url?: string;
 }
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   }
   try {
     const body = await request.json() as SpouseBody;
-    const { id, full_name, person_id, image_url = '' } = body;
+    const { id, full_name, alt_name = '', person_id, image_url = '' } = body;
     if (!id || !full_name || !person_id) {
       return Response.json({ error: 'id, full_name and person_id are required' }, { status: 400 });
     }
@@ -42,8 +43,8 @@ export async function POST(request: Request) {
       return Response.json({ error: `Spouse with id "${id}" already exists` }, { status: 409 });
     }
     await db
-      .prepare('INSERT INTO spouses (id, full_name, person_id, image_url) VALUES (?, ?, ?, ?)')
-      .bind(id, full_name, person_id, image_url)
+      .prepare('INSERT INTO spouses (id, full_name, alt_name, person_id, image_url) VALUES (?, ?, ?, ?, ?)')
+      .bind(id, full_name, alt_name, person_id, image_url)
       .run();
     return Response.json({ success: true }, { status: 201 });
   } catch (err) {
@@ -64,6 +65,7 @@ export async function PATCH(request: Request) {
     const updates: string[] = [];
     const values: unknown[] = [];
     if (fields.full_name !== undefined) { updates.push('full_name = ?'); values.push(fields.full_name); }
+    if (fields.alt_name !== undefined) { updates.push('alt_name = ?'); values.push(fields.alt_name); }
     if (fields.person_id !== undefined) { updates.push('person_id = ?'); values.push(fields.person_id); }
     if (fields.image_url !== undefined) { updates.push('image_url = ?'); values.push(fields.image_url); }
 
