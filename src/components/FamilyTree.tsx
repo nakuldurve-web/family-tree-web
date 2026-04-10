@@ -1,7 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import Script from 'next/script';
+import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import type { RawNodeDatum, CustomNodeElementProps } from 'react-d3-tree';
+
+// Dynamically import Tree to avoid SSR issues
+const Tree = dynamic(
+  () => import('react-d3-tree').then((m) => ({ default: m.Tree })),
+  { ssr: false }
+);
+
+// ─── Interfaces ──────────────────────────────────────────────────────────────
 
 interface Person {
   id: string;
@@ -32,77 +41,110 @@ interface Props {
   links: Link[];
 }
 
-declare global {
-  interface Window {
-    google: {
-      charts: {
-        load: (version: string, opts: Record<string, unknown>) => void;
-        setOnLoadCallback: (cb: () => void) => void;
-      };
-      visualization: {
-        OrgChart: new (el: HTMLElement) => {
-          draw: (data: unknown, opts: unknown) => void;
-        };
-        DataTable: new () => {
-          addColumn: (type: string, label: string) => void;
-          addRows: (rows: unknown[]) => void;
-        };
-      };
-    };
-  }
+// ─── Generation color palette ────────────────────────────────────────────────
+
+const GEN_COLORS = [
+  { border: '#7c3d12', bg: '#fef3c7', text: '#78350f', label: 'Generation 1' },
+  { border: '#b45309', bg: '#fff7ed', text: '#92400e', label: 'Generation 2' },
+  { border: '#15803d', bg: '#f0fdf4', text: '#14532d', label: 'Generation 3' },
+  { border: '#0369a1', bg: '#f0f9ff', text: '#0c4a6e', label: 'Generation 4' },
+  { border: '#6d28d9', bg: '#f5f3ff', text: '#4c1d95', label: 'Generation 5' },
+  { border: '#be185d', bg: '#fdf2f8', text: '#9d174d', label: 'Generation 6' },
+];
+
+function getGenColor(depth: number) {
+  return GEN_COLORS[depth % GEN_COLORS.length];
 }
 
-// Build the HTML cell for one person node (matches tree13.py format)
-function buildNodeHtml(person: Person, spouseMap: Map<string, Spouse>, linksMap: Map<string, Link[]>): string {
-  const spouse = spouseMap.get(person.id);
-  const personLinks = linksMap.get(person.id) ?? [];
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-  const PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyNSIgY3k9IjI1IiByPSIyNSIgZmlsbD0iI2U1ZDRiNCIvPjxjaXJjbGUgY3g9IjI1IiBjeT0iMjAiIHI9IjkiIGZpbGw9IiNhMzZhMjAiLz48cGF0aCBkPSJNOCA0NGMwLTkuOTQgNy42Mi0xOCAxNy0xOHMxNyA4LjA2IDE3IDE4IiBmaWxsPSIjYTM2YTIwIi8+PC9zdmc+';
+const PLACEHOLDER =
+  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyNSIgY3k9IjI1IiByPSIyNSIgZmlsbD0iI2U1ZDRiNCIvPjxjaXJjbGUgY3g9IjI1IiBjeT0iMjAiIHI9IjkiIGZpbGw9IiNhMzZhMjAiLz48cGF0aCBkPSJNOCA0NGMwLTkuOTQgNy42Mi0xOCAxNy0xOHMxNyA4LjA2IDE3IDE4IiBmaWxsPSIjYTM2YTIwIi8+PC9zdmc+';
 
-  function imgTag(url: string, alt: string, color: string): string {
-    const src = url && url.trim() ? url : PLACEHOLDER;
-    return `<img src="${src}" alt="${alt}" style="width:50px;height:50px;border-radius:50%;border:2px solid ${color};object-fit:cover;vertical-align:middle;" onerror="this.src='${PLACEHOLDER}'" />`;
-  }
+const NODE_WIDTH = 200;
+const NODE_HEIGHT_BASE = 90;   // no spouse
+const NODE_HEIGHT_SPOUSE = 140; // with spouse
 
-  // Build links HTML for person
-  let linksHtml = '';
-  if (personLinks.length > 0) {
-    const linkItems = personLinks
-      .map((l) => {
-        const label = l.display_html || l.description || l.url;
-        return `<a href="${l.url}" target="_blank" style="color:#1a56db;font-size:11px;display:block;margin-top:2px;">${label}</a>`;
-      })
-      .join('');
-    linksHtml = `<div style="margin-top:4px;">${linkItems}</div>`;
-  }
+// ─── Tree data builder ───────────────────────────────────────────────────────
 
-  const personBlock = `
-    <div style="display:inline-block;text-align:center;vertical-align:top;padding:4px;">
-      ${imgTag(person.image_url, person.full_name, '#1a6dc4')}
-      <div style="color:#1a4a8a;font-weight:bold;font-size:12px;max-width:90px;word-wrap:break-word;margin-top:4px;">${person.full_name}</div>
-      ${linksHtml}
-    </div>`;
-
-  if (!spouse) {
-    return personBlock;
-  }
-
-  const spouseBlock = `
-    <div style="display:inline-block;text-align:center;vertical-align:top;padding:4px;">
-      ${imgTag(spouse.image_url, spouse.full_name, '#c41a1a')}
-      <div style="color:#8a1a1a;font-weight:bold;font-size:12px;max-width:90px;word-wrap:break-word;margin-top:4px;">${spouse.full_name}</div>
-    </div>`;
-
-  return `<div style="white-space:nowrap;">${personBlock}<span style="font-size:18px;vertical-align:middle;margin:0 2px;">❤️</span>${spouseBlock}</div>`;
+interface TreeNode extends RawNodeDatum {
+  attributes: { personId: string; hasSpouse?: boolean };
+  children?: TreeNode[];
 }
+
+function buildTreeData(people: Person[], spouseMap: Map<string, Spouse>): TreeNode[] {
+  const approvedIds = new Set(people.map((p) => p.id));
+  const nodeMap = new Map<string, TreeNode>();
+
+  // Create nodes
+  for (const p of people) {
+    nodeMap.set(p.id, {
+      name: p.full_name,
+      attributes: {
+        personId: p.id,
+        hasSpouse: spouseMap.has(p.id),
+      },
+      children: [],
+    });
+  }
+
+  const roots: TreeNode[] = [];
+
+  // Wire up parent/child relationships
+  for (const p of people) {
+    const node = nodeMap.get(p.id)!;
+    if (p.parent_id && approvedIds.has(p.parent_id)) {
+      const parent = nodeMap.get(p.parent_id);
+      if (parent) {
+        parent.children = parent.children ?? [];
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // If multiple roots, wrap in virtual root
+  if (roots.length > 1) {
+    return [
+      {
+        name: 'Family',
+        attributes: { personId: '__root__' },
+        children: roots,
+      },
+    ];
+  }
+
+  return roots.length === 1 ? [roots[0]] : [];
+}
+
+// ─── Collect depths present in tree ─────────────────────────────────────────
+
+function collectDepths(nodes: TreeNode[], depth = 0, result = new Set<number>()): Set<number> {
+  for (const node of nodes) {
+    if (node.attributes?.personId !== '__root__') {
+      result.add(depth);
+    }
+    if (node.children && node.children.length > 0) {
+      collectDepths(node.children as TreeNode[], depth + 1, result);
+    }
+  }
+  return result;
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export default function FamilyTree({ people, spouses, links }: Props) {
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [googleReady, setGoogleReady] = useState(false);
-  const [scriptLoaded, setScriptLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const [zoom, setZoom] = useState(0.6);
+  const [translate, setTranslate] = useState({ x: 0, y: 60 });
   const [search, setSearch] = useState('');
-  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const INITIAL_ZOOM = 0.6;
 
   // Build lookup maps
   const spouseMap = new Map(spouses.map((s) => [s.person_id, s]));
@@ -113,110 +155,211 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     linksMap.set(link.person_id, arr);
   }
 
-  const drawChart = useCallback(() => {
-    if (!chartRef.current || !window.google?.visualization) return;
-    try {
-      const data = new window.google.visualization.DataTable();
-      data.addColumn('string', 'Name');
-      data.addColumn('string', 'Manager');
-      data.addColumn('string', 'Tooltip');
+  const treeData = buildTreeData(people, spouseMap);
 
-      const rows: [{ v: string; f: string }, string, string][] = [];
+  // Determine which generations are present (relative to virtual root offset)
+  const hasVirtualRoot =
+    treeData.length === 1 && treeData[0].attributes?.personId === '__root__';
+  const depthsRaw = collectDepths(treeData);
+  // If virtual root, depths in raw tree start at 1 for gen 1; shift down
+  const presentGenerations = new Set<number>();
+  depthsRaw.forEach((d) => {
+    presentGenerations.add(hasVirtualRoot ? d - 1 : d);
+  });
 
-      for (const person of people) {
-        const nodeHtml = buildNodeHtml(person, spouseMap, linksMap);
-        const tooltip = person.tooltip || person.full_name;
-        const parent = person.parent_id ?? '';
-        rows.push([{ v: person.id, f: nodeHtml }, parent, tooltip]);
-      }
-
-      data.addRows(rows);
-
-      const chart = new window.google.visualization.OrgChart(chartRef.current);
-      chart.draw(data, {
-        allowHtml: true,
-        allowCollapse: true,
-        size: 'medium',
-        nodeClass: 'family-tree-node',
-        selectedNodeClass: 'family-tree-node-selected',
-      });
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [people, spouseMap, linksMap]);
-
-  // When Google Charts is ready, draw
+  // Set initial translate to center of container
   useEffect(() => {
-    if (!googleReady) return;
-    if (people.length === 0) return;
-    drawChart();
-  }, [googleReady, drawChart, people]);
-
-  // Handle script load — init google.charts
-  function handleScriptLoad() {
-    setScriptLoaded(true);
-    if (window.google?.charts) {
-      window.google.charts.load('current', { packages: ['orgchart'] });
-      window.google.charts.setOnLoadCallback(() => setGoogleReady(true));
+    setMounted(true);
+    if (containerRef.current) {
+      const w = containerRef.current.clientWidth || 800;
+      setTranslate({ x: w / 2, y: 60 });
     }
+  }, []);
+
+  // Reset handler
+  function handleReset() {
+    setZoom(INITIAL_ZOOM);
+    const w = containerRef.current?.clientWidth ?? 800;
+    setTranslate({ x: w / 2, y: 60 });
   }
 
-  // If script was already loaded (e.g. hot reload), fire manually
-  useEffect(() => {
-    if (scriptLoaded && window.google?.charts) {
-      window.google.charts.load('current', { packages: ['orgchart'] });
-      window.google.charts.setOnLoadCallback(() => setGoogleReady(true));
-    }
-  }, [scriptLoaded]);
-
-  // Search highlight: scroll to and highlight the matching person node
+  // Search handler
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!search.trim()) { setHighlightId(null); return; }
     const term = search.trim().toLowerCase();
+    if (!term) {
+      setHighlightedId(null);
+      return;
+    }
     const match = people.find(
       (p) =>
-        p.id.toLowerCase().includes(term) ||
-        p.full_name.toLowerCase().includes(term)
+        p.full_name.toLowerCase().includes(term) ||
+        p.id.toLowerCase().includes(term)
     );
     if (match) {
-      setHighlightId(match.id);
-      // Try to find the rendered node and scroll to it
-      if (chartRef.current) {
-        // Google OrgChart renders each node with the data value as an attribute on the td
-        const cells = chartRef.current.querySelectorAll('td.google-visualization-orgchart-node');
-        cells.forEach((cell) => {
-          const inner = cell.querySelector('[data-row]');
-          if (inner) return;
-          // fall back: check text content
-        });
-        // Simpler: find the first element whose text contains the name
-        const allNodes = chartRef.current.querySelectorAll('.google-visualization-orgchart-node');
-        for (const node of Array.from(allNodes)) {
-          if (node.textContent?.toLowerCase().includes(term)) {
-            node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            (node as HTMLElement).style.boxShadow = '0 0 0 3px #e3ad4e';
-            setTimeout(() => {
-              (node as HTMLElement).style.boxShadow = '';
-            }, 3000);
-            break;
-          }
-        }
-      }
+      setHighlightedId(match.id);
     } else {
-      setHighlightId(null);
+      setHighlightedId(null);
       alert(`No person found matching "${search}"`);
     }
   }
 
+  // ── Custom node renderer ────────────────────────────────────────────────────
+  function renderNode({ nodeDatum, toggleNode }: CustomNodeElementProps): JSX.Element {
+    const personId = (nodeDatum.attributes?.personId as string) ?? '';
+    const rawDepth: number = (nodeDatum as unknown as { __rd3t?: { depth?: number } }).__rd3t?.depth ?? 0;
+
+    // Virtual root: render invisible anchor
+    if (personId === '__root__') {
+      return (
+        <g>
+          <circle r={1} fill="transparent" stroke="transparent" onClick={toggleNode} style={{ cursor: 'pointer' }} />
+        </g>
+      );
+    }
+
+    // Visual depth: subtract 1 if there's a virtual root
+    const depth = hasVirtualRoot ? rawDepth - 1 : rawDepth;
+    const colors = getGenColor(Math.max(0, depth));
+
+    const spouse = spouseMap.get(personId);
+    const nodeHeight = spouse ? NODE_HEIGHT_SPOUSE : NODE_HEIGHT_BASE;
+    const isHighlighted = highlightedId === personId;
+
+    const person = people.find((p) => p.id === personId);
+    const personImg = person?.image_url?.trim() ? person.image_url : PLACEHOLDER;
+    const spouseImg = spouse?.image_url?.trim() ? spouse.image_url : PLACEHOLDER;
+
+    // foreignObject for HTML-based node
+    return (
+      <g>
+        <foreignObject
+          x={-NODE_WIDTH / 2}
+          y={-nodeHeight / 2}
+          width={NODE_WIDTH}
+          height={nodeHeight + 10}
+          style={{ overflow: 'visible' }}
+        >
+          {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+          {/* @ts-ignore – xmlns required for foreignObject in SVG */}
+          <div
+            xmlns="http://www.w3.org/1999/xhtml"
+            onClick={toggleNode}
+            style={{
+              background: colors.bg,
+              border: `1px solid ${colors.border}`,
+              borderLeft: `4px solid ${colors.border}`,
+              borderRadius: '10px',
+              padding: '8px 10px 8px 12px',
+              width: `${NODE_WIDTH}px`,
+              boxSizing: 'border-box',
+              cursor: 'pointer',
+              fontFamily: 'system-ui, sans-serif',
+              position: 'relative',
+              boxShadow: isHighlighted
+                ? `0 0 0 3px ${colors.border}, 0 0 16px 4px ${colors.border}88`
+                : '0 1px 4px rgba(0,0,0,0.12)',
+            }}
+          >
+            {/* Gen badge */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '5px',
+                right: '8px',
+                fontSize: '9px',
+                fontWeight: 700,
+                color: colors.border,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                opacity: 0.8,
+              }}
+            >
+              {GEN_COLORS[Math.max(0, depth) % GEN_COLORS.length].label}
+            </div>
+
+            {/* Person row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <img
+                src={personImg}
+                alt={nodeDatum.name}
+                width={40}
+                height={40}
+                style={{
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: `2px solid ${colors.border}`,
+                  flexShrink: 0,
+                }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = PLACEHOLDER;
+                }}
+              />
+              <span
+                style={{
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  color: colors.text,
+                  wordBreak: 'break-word',
+                  lineHeight: 1.3,
+                }}
+              >
+                {nodeDatum.name}
+              </span>
+            </div>
+
+            {/* Spouse row */}
+            {spouse && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '8px',
+                  paddingTop: '6px',
+                  borderTop: `1px dashed ${colors.border}66`,
+                }}
+              >
+                <span style={{ fontSize: '13px', color: '#e11d48', flexShrink: 0 }}>♥</span>
+                <img
+                  src={spouseImg}
+                  alt={spouse.full_name}
+                  width={32}
+                  height={32}
+                  style={{
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '2px solid #e11d48',
+                    flexShrink: 0,
+                  }}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = PLACEHOLDER;
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontStyle: 'italic',
+                    color: '#be185d',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {spouse.full_name}
+                </span>
+              </div>
+            )}
+          </div>
+        </foreignObject>
+      </g>
+    );
+  }
+
+  // ── Legend ──────────────────────────────────────────────────────────────────
+  const legendItems = GEN_COLORS.filter((_, i) => presentGenerations.has(i));
+
   return (
     <div className="w-full">
-      <Script
-        src="https://www.gstatic.com/charts/loader.js"
-        strategy="afterInteractive"
-        onLoad={handleScriptLoad}
-      />
-
       {/* Search bar */}
       <form onSubmit={handleSearch} className="flex gap-2 mb-4 max-w-sm">
         <input
@@ -232,10 +375,13 @@ export default function FamilyTree({ people, spouses, links }: Props) {
         >
           Find
         </button>
-        {highlightId && (
+        {highlightedId && (
           <button
             type="button"
-            onClick={() => { setHighlightId(null); setSearch(''); }}
+            onClick={() => {
+              setHighlightedId(null);
+              setSearch('');
+            }}
             className="text-sm text-tan-500 hover:text-tan-700 px-2"
           >
             ✕
@@ -243,41 +389,184 @@ export default function FamilyTree({ people, spouses, links }: Props) {
         )}
       </form>
 
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
-          Chart error: {error}
-        </div>
-      )}
-
-      {/* Loading state */}
-      {!googleReady && (
-        <div className="flex items-center justify-center py-20 text-tan-500">
-          <div className="animate-spin rounded-full h-10 w-10 border-4 border-tan-200 border-t-tan-600 mr-3" />
-          <span className="text-sm">Loading chart…</span>
-        </div>
-      )}
-
-      {/* Chart container */}
+      {/* Tree container */}
       <div
-        className="w-full overflow-x-auto rounded-xl border border-tan-200 bg-white shadow-sm"
-        style={{ minHeight: googleReady ? undefined : '0px' }}
+        ref={containerRef}
+        className="w-full rounded-xl border border-tan-200 bg-white shadow-sm overflow-hidden"
+        style={{ height: '75vh', minHeight: '500px', position: 'relative' }}
       >
-        <div
-          ref={chartRef}
-          className="p-4"
-          style={{ display: googleReady ? 'block' : 'none' }}
-        />
-      </div>
+        {/* Loading spinner */}
+        {!mounted && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'white',
+              zIndex: 10,
+            }}
+          >
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                border: '4px solid #e5e7eb',
+                borderTop: '4px solid #b45309',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+            <span style={{ marginLeft: '12px', fontSize: '14px', color: '#9ca3af' }}>
+              Loading tree…
+            </span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
 
-      {people.length === 0 && googleReady && (
-        <div className="text-center py-16 text-tan-500">
-          <span className="text-4xl block mb-3">🌳</span>
-          <p>No family members in the database yet.</p>
-          <p className="text-sm mt-1">
-            Run the import script or add people via the Admin panel.
-          </p>
-        </div>
-      )}
+        {/* Zoom controls (top-left) */}
+        {mounted && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '12px',
+              left: '12px',
+              zIndex: 20,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+            }}
+          >
+            {[
+              { label: '+', action: () => setZoom((z) => Math.min(z + 0.1, 3)) },
+              { label: '−', action: () => setZoom((z) => Math.max(z - 0.1, 0.1)) },
+              { label: '⌂', action: handleReset },
+            ].map(({ label, action }) => (
+              <button
+                key={label}
+                onClick={action}
+                title={label === '⌂' ? 'Reset view' : label === '+' ? 'Zoom in' : 'Zoom out'}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  background: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: label === '⌂' ? '16px' : '18px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  color: '#374151',
+                  lineHeight: 1,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Generation legend (top-right) */}
+        {mounted && legendItems.length > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              zIndex: 20,
+              background: 'rgba(255,255,255,0.92)',
+              border: '1px solid #e5e7eb',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
+              minWidth: '140px',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: '#6b7280',
+                marginBottom: '6px',
+              }}
+            >
+              Generations
+            </div>
+            {legendItems.map((g, i) => {
+              // Find which generation index this is
+              const genIndex = GEN_COLORS.indexOf(g);
+              if (!presentGenerations.has(genIndex)) return null;
+              return (
+                <div
+                  key={g.label}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: i < legendItems.length - 1 ? '5px' : 0 }}
+                >
+                  <div
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '3px',
+                      background: g.bg,
+                      border: `2px solid ${g.border}`,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ fontSize: '11px', color: g.text, fontWeight: 600 }}>
+                    {g.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* react-d3-tree */}
+        {mounted && treeData.length > 0 && (
+          <Tree
+            data={treeData[0]}
+            orientation="vertical"
+            renderCustomNodeElement={renderNode}
+            nodeSize={{ x: 220, y: 180 }}
+            separation={{ siblings: 1.1, nonSiblings: 1.5 }}
+            initialDepth={3}
+            zoom={zoom}
+            translate={translate}
+            onUpdate={({ zoom: z, translate: t }) => {
+              setZoom(z as number);
+              setTranslate(t as { x: number; y: number });
+            }}
+            pathFunc="step"
+            enableLegacyTransitions={false}
+          />
+        )}
+
+        {/* Empty state */}
+        {mounted && people.length === 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#9ca3af',
+            }}
+          >
+            <span style={{ fontSize: '48px', marginBottom: '12px' }}>🌳</span>
+            <p style={{ margin: 0 }}>No family members in the database yet.</p>
+            <p style={{ margin: '4px 0 0', fontSize: '13px' }}>
+              Run the import script or add people via the Admin panel.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
