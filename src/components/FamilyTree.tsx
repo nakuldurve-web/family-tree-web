@@ -63,6 +63,7 @@ const PLACEHOLDER =
 const NODE_WIDTH = 200;
 const NODE_HEIGHT_BASE = 90;
 const NODE_HEIGHT_SPOUSE = 140;
+const SEARCH_ZOOM = 1.2;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -160,6 +161,16 @@ function buildTreeData(
   ];
 }
 
+// ─── CSS keyframes (injected once) ────────────────────────────────────────────
+
+const GLOBAL_STYLES = `
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes highlightPulse {
+    0%, 100% { box-shadow: 0 0 0 3px #f59e0b, 0 0 20px 6px #f59e0baa; }
+    50%       { box-shadow: 0 0 0 5px #f59e0b, 0 0 32px 12px #f59e0b88; }
+  }
+`;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FamilyTree({ people, spouses, links }: Props) {
@@ -169,6 +180,9 @@ export default function FamilyTree({ people, spouses, links }: Props) {
   const [translate, setTranslate] = useState({ x: 0, y: 60 });
   const [search, setSearch] = useState('');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  // Stores the tree-space position of the highlighted node (set during renderNode)
+  const highlightedPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const INITIAL_ZOOM = 0.5;
 
@@ -199,6 +213,24 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     }
   }, []);
 
+  // Pan & zoom to highlighted node whenever highlightedId changes
+  useEffect(() => {
+    if (!highlightedId || !containerRef.current) return;
+    // Give react-d3-tree one frame to render and populate highlightedPosRef
+    const timer = setTimeout(() => {
+      const pos = highlightedPosRef.current;
+      if (!pos) return;
+      const cw = containerRef.current!.clientWidth;
+      const ch = containerRef.current!.clientHeight;
+      setZoom(SEARCH_ZOOM);
+      setTranslate({
+        x: cw / 2 - pos.x * SEARCH_ZOOM,
+        y: ch / 2 - pos.y * SEARCH_ZOOM,
+      });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [highlightedId]);
+
   function handleReset() {
     setZoom(INITIAL_ZOOM);
     setTranslate({ x: (containerRef.current?.clientWidth ?? 800) / 2, y: 60 });
@@ -215,6 +247,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
       )
     );
     if (match) {
+      highlightedPosRef.current = null; // clear stale position
       setHighlightedId(match.id);
     } else {
       setHighlightedId(null);
@@ -224,7 +257,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
 
   // ── Custom node renderer ──────────────────────────────────────────────────
 
-  function renderNode({ nodeDatum, toggleNode }: CustomNodeElementProps): JSX.Element {
+  function renderNode({ nodeDatum, toggleNode, hierarchyPointNode }: CustomNodeElementProps): JSX.Element {
     const personId = (nodeDatum.attributes?.personId as string) ?? '';
 
     // Virtual root — invisible connector
@@ -242,6 +275,17 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     const nodeHeight = spouse ? NODE_HEIGHT_SPOUSE : NODE_HEIGHT_BASE;
     const isHighlighted = (nodeDatum.attributes?.highlighted as boolean) ?? false;
 
+    // Capture position of highlighted node for centering
+    if (isHighlighted && hierarchyPointNode) {
+      highlightedPosRef.current = { x: hierarchyPointNode.x, y: hierarchyPointNode.y };
+    }
+
+    // Collapsed indicator — node has children but they are hidden
+    const rd3t = (nodeDatum as unknown as { __rd3t?: { collapsed?: boolean } }).__rd3t;
+    const isCollapsed = !!(rd3t?.collapsed);
+    const childCount = nodeDatum.children?.length ?? 0;
+    const hasHiddenChildren = isCollapsed && childCount > 0;
+
     const person = people.find((p) => p.id === personId);
     const personImg = person?.image_url?.trim() ? person.image_url : PLACEHOLDER;
     const spouseImg = spouse?.image_url?.trim() ? spouse.image_url : PLACEHOLDER;
@@ -252,64 +296,113 @@ export default function FamilyTree({ people, spouses, links }: Props) {
           x={-NODE_WIDTH / 2}
           y={-nodeHeight / 2}
           width={NODE_WIDTH}
-          height={nodeHeight + 10}
+          height={nodeHeight + (hasHiddenChildren ? 30 : 10)}
           style={{ overflow: 'visible' }}
         >
-          <div
-            onClick={toggleNode}
-            style={{
-              background: colors.bg,
-              border: `1px solid ${colors.border}`,
-              borderLeft: `4px solid ${colors.border}`,
-              borderRadius: '10px',
-              padding: '8px 10px 8px 12px',
-              width: `${NODE_WIDTH}px`,
-              boxSizing: 'border-box',
-              cursor: 'pointer',
-              fontFamily: 'system-ui, sans-serif',
-              position: 'relative',
-              boxShadow: isHighlighted
-                ? `0 0 0 3px ${colors.border}, 0 0 16px 4px ${colors.border}88`
-                : '0 1px 4px rgba(0,0,0,0.12)',
-            }}
-          >
-            {/* Gen badge */}
-            <div style={{
-              position: 'absolute', top: '5px', right: '8px',
-              fontSize: '9px', fontWeight: 700, color: colors.border,
-              letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.8,
-            }}>
-              {colors.label}
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: `${NODE_WIDTH}px` }}>
+            {/* Main card */}
+            <div
+              onClick={toggleNode}
+              style={{
+                background: isHighlighted ? '#fef3c7' : colors.bg,
+                border: isHighlighted ? '2px solid #f59e0b' : `1px solid ${colors.border}`,
+                borderLeft: isHighlighted ? '5px solid #f59e0b' : `4px solid ${colors.border}`,
+                borderRadius: '10px',
+                padding: '8px 10px 8px 12px',
+                width: `${NODE_WIDTH}px`,
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+                fontFamily: 'system-ui, sans-serif',
+                position: 'relative',
+                animation: isHighlighted ? 'highlightPulse 1.4s ease-in-out infinite' : 'none',
+                boxShadow: isHighlighted
+                  ? '0 0 0 3px #f59e0b, 0 0 20px 6px #f59e0baa'
+                  : '0 1px 4px rgba(0,0,0,0.12)',
+              }}
+            >
+              {/* "Found" badge for highlighted node */}
+              {isHighlighted && (
+                <div style={{
+                  position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)',
+                  background: '#f59e0b', color: 'white', fontSize: '9px', fontWeight: 800,
+                  padding: '2px 8px', borderRadius: '99px', letterSpacing: '0.1em',
+                  textTransform: 'uppercase', whiteSpace: 'nowrap', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                }}>
+                  ★ Found
+                </div>
+              )}
 
-            {/* Person */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <img
-                src={personImg}
-                alt={nodeDatum.name}
-                width={40} height={40}
-                style={{ borderRadius: '50%', objectFit: 'cover', border: `2px solid ${colors.border}`, flexShrink: 0 }}
-                onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
-              />
-              <span style={{ fontWeight: 700, fontSize: '12px', color: colors.text, wordBreak: 'break-word', lineHeight: 1.3 }}>
-                {nodeDatum.name}
-              </span>
-            </div>
+              {/* Gen badge */}
+              <div style={{
+                position: 'absolute', top: '5px', right: '8px',
+                fontSize: '9px', fontWeight: 700, color: isHighlighted ? '#92400e' : colors.border,
+                letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.8,
+              }}>
+                {colors.label}
+              </div>
 
-            {/* Spouse */}
-            {spouse && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '6px', borderTop: `1px dashed ${colors.border}66` }}>
-                <span style={{ fontSize: '13px', color: '#e11d48', flexShrink: 0 }}>♥</span>
+              {/* Person */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <img
-                  src={spouseImg}
-                  alt={spouse.full_name}
-                  width={32} height={32}
-                  style={{ borderRadius: '50%', objectFit: 'cover', border: '2px solid #e11d48', flexShrink: 0 }}
+                  src={personImg}
+                  alt={nodeDatum.name}
+                  width={40} height={40}
+                  style={{
+                    borderRadius: '50%', objectFit: 'cover',
+                    border: isHighlighted ? '2px solid #f59e0b' : `2px solid ${colors.border}`,
+                    flexShrink: 0,
+                  }}
                   onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
                 />
-                <span style={{ fontSize: '11px', fontStyle: 'italic', color: '#be185d', wordBreak: 'break-word', lineHeight: 1.3 }}>
-                  {spouse.full_name}
+                <span style={{
+                  fontWeight: 700, fontSize: '12px',
+                  color: isHighlighted ? '#78350f' : colors.text,
+                  wordBreak: 'break-word', lineHeight: 1.3,
+                }}>
+                  {nodeDatum.name}
                 </span>
+              </div>
+
+              {/* Spouse */}
+              {spouse && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '6px', borderTop: `1px dashed ${isHighlighted ? '#f59e0b88' : colors.border + '66'}` }}>
+                  <span style={{ fontSize: '13px', color: '#e11d48', flexShrink: 0 }}>♥</span>
+                  <img
+                    src={spouseImg}
+                    alt={spouse.full_name}
+                    width={32} height={32}
+                    style={{ borderRadius: '50%', objectFit: 'cover', border: '2px solid #e11d48', flexShrink: 0 }}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
+                  />
+                  <span style={{ fontSize: '11px', fontStyle: 'italic', color: '#be185d', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                    {spouse.full_name}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Collapsed children badge */}
+            {hasHiddenChildren && (
+              <div
+                onClick={toggleNode}
+                style={{
+                  marginTop: '4px',
+                  background: colors.border,
+                  color: 'white',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: '99px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  letterSpacing: '0.03em',
+                }}
+              >
+                <span style={{ fontSize: '8px' }}>▼</span>
+                {childCount} {childCount === 1 ? 'child' : 'children'} hidden
               </div>
             )}
           </div>
@@ -324,6 +417,9 @@ export default function FamilyTree({ people, spouses, links }: Props) {
 
   return (
     <div className="w-full">
+      {/* Inject global keyframes */}
+      <style>{GLOBAL_STYLES}</style>
+
       {/* Search */}
       <form onSubmit={handleSearch} className="flex gap-2 mb-4 max-w-sm">
         <input
@@ -354,7 +450,6 @@ export default function FamilyTree({ people, spouses, links }: Props) {
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', zIndex: 10 }}>
             <div style={{ width: 40, height: 40, border: '4px solid #e2e8f0', borderTop: '4px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             <span style={{ marginLeft: 12, fontSize: 14, color: '#94a3b8' }}>Loading tree…</span>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
 
@@ -396,7 +491,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
             data={treeData[0]}
             orientation="vertical"
             renderCustomNodeElement={renderNode}
-            nodeSize={{ x: 220, y: 180 }}
+            nodeSize={{ x: 220, y: 200 }}
             separation={{ siblings: 1.1, nonSiblings: 1.5 }}
             zoom={zoom}
             translate={translate}
