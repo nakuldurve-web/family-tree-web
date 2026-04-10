@@ -70,36 +70,38 @@ const SEARCH_ZOOM = 1.2;
 const isGenNode = (id: string) => /^Generation_\d+$/i.test(id);
 
 /**
- * Compute generation number (0-indexed) for each person.
- * The tooltip field stores the generation number as a plain integer string (e.g. "2", "3").
- * Fall back to parent's generation + 1 for anyone without a numeric tooltip.
+ * Compute generation number (0-indexed) purely from tree depth.
+ * Roots (no parent, or parent is a Generation_X placeholder) = 0.
+ * Each level of children adds 1. Ignores the tooltip field entirely.
  */
 function computeGenerations(people: Person[]): Map<string, number> {
-  const personMap = new Map(people.map((p) => [p.id, p]));
-  const genMap = new Map<string, number>();
+  const visible = people.filter((p) => !isGenNode(p.id));
+  const visibleIds = new Set(visible.map((p) => p.id));
 
-  // First pass: people with a numeric tooltip
-  for (const p of people) {
-    const n = parseInt(p.tooltip);
-    if (!isNaN(n) && n >= 1) genMap.set(p.id, n - 1); // 0-indexed
-  }
+  // Build children map
+  const childrenOf = new Map<string, string[]>();
+  const roots: string[] = [];
 
-  // Second pass: propagate through parent links (BFS)
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const p of people) {
-      if (genMap.has(p.id)) continue;
-      if (p.parent_id && personMap.has(p.parent_id)) {
-        const pg = genMap.get(p.parent_id);
-        if (pg !== undefined) { genMap.set(p.id, pg + 1); changed = true; }
-      }
+  for (const p of visible) {
+    const parentIsVisible = p.parent_id && visibleIds.has(p.parent_id);
+    if (parentIsVisible) {
+      const arr = childrenOf.get(p.parent_id!) ?? [];
+      arr.push(p.id);
+      childrenOf.set(p.parent_id!, arr);
+    } else {
+      roots.push(p.id);
     }
   }
 
-  // Fallback
-  for (const p of people) {
-    if (!genMap.has(p.id)) genMap.set(p.id, 0);
+  // BFS from roots
+  const genMap = new Map<string, number>();
+  const queue: Array<{ id: string; depth: number }> = roots.map((id) => ({ id, depth: 0 }));
+  while (queue.length > 0) {
+    const { id, depth } = queue.shift()!;
+    genMap.set(id, depth);
+    for (const childId of childrenOf.get(id) ?? []) {
+      queue.push({ id: childId, depth: depth + 1 });
+    }
   }
 
   return genMap;
