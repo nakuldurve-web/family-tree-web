@@ -4,13 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { RawNodeDatum, CustomNodeElementProps } from 'react-d3-tree';
 
-// Dynamically import Tree to avoid SSR issues
 const Tree = dynamic(
   () => import('react-d3-tree').then((m) => ({ default: m.Tree })),
   { ssr: false }
 );
 
-// ─── Interfaces ──────────────────────────────────────────────────────────────
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface Person {
   id: string;
@@ -41,47 +40,97 @@ interface Props {
   links: Link[];
 }
 
-// ─── Generation color palette ────────────────────────────────────────────────
+// ─── Generation color palette ─────────────────────────────────────────────────
 
 const GEN_COLORS = [
-  { border: '#7c3aed', bg: '#f5f3ff', text: '#4c1d95', label: 'Generation 1' },  // violet
-  { border: '#2563eb', bg: '#eff6ff', text: '#1e3a8a', label: 'Generation 2' },  // blue
-  { border: '#0891b2', bg: '#ecfeff', text: '#164e63', label: 'Generation 3' },  // cyan
-  { border: '#059669', bg: '#ecfdf5', text: '#064e3b', label: 'Generation 4' },  // emerald
-  { border: '#d97706', bg: '#fffbeb', text: '#78350f', label: 'Generation 5' },  // amber
-  { border: '#e11d48', bg: '#fff1f2', text: '#881337', label: 'Generation 6' },  // rose
+  { border: '#7c3aed', bg: '#f5f3ff', text: '#4c1d95', label: 'Generation 1' },
+  { border: '#2563eb', bg: '#eff6ff', text: '#1e3a8a', label: 'Generation 2' },
+  { border: '#0891b2', bg: '#ecfeff', text: '#164e63', label: 'Generation 3' },
+  { border: '#059669', bg: '#ecfdf5', text: '#064e3b', label: 'Generation 4' },
+  { border: '#d97706', bg: '#fffbeb', text: '#78350f', label: 'Generation 5' },
+  { border: '#e11d48', bg: '#fff1f2', text: '#881337', label: 'Generation 6' },
 ];
 
-function getGenColor(depth: number) {
-  return GEN_COLORS[depth % GEN_COLORS.length];
+function getGenColor(gen: number) {
+  return GEN_COLORS[Math.max(0, gen) % GEN_COLORS.length];
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const PLACEHOLDER =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyNSIgY3k9IjI1IiByPSIyNSIgZmlsbD0iI2U1ZDRiNCIvPjxjaXJjbGUgY3g9IjI1IiBjeT0iMjAiIHI9IjkiIGZpbGw9IiNhMzZhMjAiLz48cGF0aCBkPSJNOCA0NGMwLTkuOTQgNy42Mi0xOCAxNy0xOHMxNyA4LjA2IDE3IDE4IiBmaWxsPSIjYTM2YTIwIi8+PC9zdmc+';
 
 const NODE_WIDTH = 200;
-const NODE_HEIGHT_BASE = 90;   // no spouse
-const NODE_HEIGHT_SPOUSE = 140; // with spouse
+const NODE_HEIGHT_BASE = 90;
+const NODE_HEIGHT_SPOUSE = 140;
 
-// ─── Tree data builder ───────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const isGenNode = (id: string) => /^Generation_\d+$/i.test(id);
+
+/**
+ * Compute generation number (0-indexed) for each person.
+ * - If a person's parent_id is "Generation_N", they are in generation N-1.
+ * - Otherwise, they inherit parent's generation + 1.
+ * - Fallback to 0 for orphans.
+ */
+function computeGenerations(people: Person[]): Map<string, number> {
+  const personMap = new Map(people.map((p) => [p.id, p]));
+  const genMap = new Map<string, number>();
+
+  // First pass: anchor people whose direct parent is a Generation node
+  for (const p of people) {
+    const m = p.parent_id?.match(/^Generation_(\d+)$/i);
+    if (m) genMap.set(p.id, parseInt(m[1]) - 1);
+  }
+
+  // Second pass: propagate through person-to-person links (BFS)
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const p of people) {
+      if (genMap.has(p.id)) continue;
+      if (p.parent_id && !isGenNode(p.parent_id) && personMap.has(p.parent_id)) {
+        const parentGen = genMap.get(p.parent_id);
+        if (parentGen !== undefined) {
+          genMap.set(p.id, parentGen + 1);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  // Third pass: fallback for any unresolved nodes
+  for (const p of people) {
+    if (!genMap.has(p.id)) genMap.set(p.id, 0);
+  }
+
+  return genMap;
+}
+
+// ─── Tree data builder ────────────────────────────────────────────────────────
 
 interface TreeNode extends RawNodeDatum {
-  attributes: { personId: string; hasSpouse?: boolean };
+  attributes: { personId: string; generation: number; hasSpouse: boolean };
   children?: TreeNode[];
 }
 
-function buildTreeData(people: Person[], spouseMap: Map<string, Spouse>): TreeNode[] {
-  const approvedIds = new Set(people.map((p) => p.id));
+function buildTreeData(
+  people: Person[],
+  spouseMap: Map<string, Spouse>,
+  genMap: Map<string, number>
+): TreeNode[] {
+  // Exclude Generation_X placeholder nodes
+  const visible = people.filter((p) => !isGenNode(p.id));
+  const visibleIds = new Set(visible.map((p) => p.id));
   const nodeMap = new Map<string, TreeNode>();
 
-  // Create nodes
-  for (const p of people) {
+  for (const p of visible) {
     nodeMap.set(p.id, {
       name: p.full_name,
       attributes: {
         personId: p.id,
+        generation: genMap.get(p.id) ?? 0,
         hasSpouse: spouseMap.has(p.id),
       },
       children: [],
@@ -89,64 +138,42 @@ function buildTreeData(people: Person[], spouseMap: Map<string, Spouse>): TreeNo
   }
 
   const roots: TreeNode[] = [];
-
-  // Wire up parent/child relationships
-  for (const p of people) {
+  for (const p of visible) {
     const node = nodeMap.get(p.id)!;
-    if (p.parent_id && approvedIds.has(p.parent_id)) {
-      const parent = nodeMap.get(p.parent_id);
-      if (parent) {
-        parent.children = parent.children ?? [];
-        parent.children.push(node);
-      } else {
-        roots.push(node);
-      }
+    // Attach to parent if parent is a visible approved person
+    if (p.parent_id && visibleIds.has(p.parent_id)) {
+      nodeMap.get(p.parent_id)?.children?.push(node);
     } else {
+      // Parent is a Generation node, null, or not approved → root
       roots.push(node);
     }
   }
 
-  // If multiple roots, wrap in virtual root
-  if (roots.length > 1) {
-    return [
-      {
-        name: 'Family',
-        attributes: { personId: '__root__' },
-        children: roots,
-      },
-    ];
-  }
+  if (roots.length === 0) return [];
+  if (roots.length === 1) return [roots[0]];
 
-  return roots.length === 1 ? [roots[0]] : [];
+  // Wrap multiple roots in a hidden virtual root
+  return [
+    {
+      name: 'Family',
+      attributes: { personId: '__root__', generation: -1, hasSpouse: false },
+      children: roots,
+    },
+  ];
 }
 
-// ─── Collect depths present in tree ─────────────────────────────────────────
-
-function collectDepths(nodes: TreeNode[], depth = 0, result = new Set<number>()): Set<number> {
-  for (const node of nodes) {
-    if (node.attributes?.personId !== '__root__') {
-      result.add(depth);
-    }
-    if (node.children && node.children.length > 0) {
-      collectDepths(node.children as TreeNode[], depth + 1, result);
-    }
-  }
-  return result;
-}
-
-// ─── Main component ──────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FamilyTree({ people, spouses, links }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
-  const [zoom, setZoom] = useState(0.6);
+  const [zoom, setZoom] = useState(0.5);
   const [translate, setTranslate] = useState({ x: 0, y: 60 });
   const [search, setSearch] = useState('');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
-  const INITIAL_ZOOM = 0.6;
+  const INITIAL_ZOOM = 0.5;
 
-  // Build lookup maps
   const spouseMap = new Map(spouses.map((s) => [s.person_id, s]));
   const linksMap = new Map<string, Link[]>();
   for (const link of links) {
@@ -155,46 +182,39 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     linksMap.set(link.person_id, arr);
   }
 
-  const treeData = buildTreeData(people, spouseMap);
+  const genMap = computeGenerations(people);
+  const treeData = buildTreeData(people, spouseMap, genMap);
 
-  // Determine which generations are present (relative to virtual root offset)
-  const hasVirtualRoot =
-    treeData.length === 1 && treeData[0].attributes?.personId === '__root__';
-  const depthsRaw = collectDepths(treeData);
-  // If virtual root, depths in raw tree start at 1 for gen 1; shift down
+  // Which generations are actually present (for legend)
   const presentGenerations = new Set<number>();
-  depthsRaw.forEach((d) => {
-    presentGenerations.add(hasVirtualRoot ? d - 1 : d);
-  });
+  for (const p of people) {
+    if (!isGenNode(p.id)) {
+      const g = genMap.get(p.id);
+      if (g !== undefined) presentGenerations.add(g % GEN_COLORS.length);
+    }
+  }
 
-  // Set initial translate to center of container
   useEffect(() => {
     setMounted(true);
     if (containerRef.current) {
-      const w = containerRef.current.clientWidth || 800;
-      setTranslate({ x: w / 2, y: 60 });
+      setTranslate({ x: containerRef.current.clientWidth / 2, y: 60 });
     }
   }, []);
 
-  // Reset handler
   function handleReset() {
     setZoom(INITIAL_ZOOM);
-    const w = containerRef.current?.clientWidth ?? 800;
-    setTranslate({ x: w / 2, y: 60 });
+    setTranslate({ x: (containerRef.current?.clientWidth ?? 800) / 2, y: 60 });
   }
 
-  // Search handler
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     const term = search.trim().toLowerCase();
-    if (!term) {
-      setHighlightedId(null);
-      return;
-    }
+    if (!term) { setHighlightedId(null); return; }
     const match = people.find(
-      (p) =>
+      (p) => !isGenNode(p.id) && (
         p.full_name.toLowerCase().includes(term) ||
         p.id.toLowerCase().includes(term)
+      )
     );
     if (match) {
       setHighlightedId(match.id);
@@ -204,12 +224,12 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     }
   }
 
-  // ── Custom node renderer ────────────────────────────────────────────────────
+  // ── Custom node renderer ──────────────────────────────────────────────────
+
   function renderNode({ nodeDatum, toggleNode }: CustomNodeElementProps): JSX.Element {
     const personId = (nodeDatum.attributes?.personId as string) ?? '';
-    const rawDepth: number = (nodeDatum as unknown as { __rd3t?: { depth?: number } }).__rd3t?.depth ?? 0;
 
-    // Virtual root: render invisible anchor
+    // Virtual root — invisible connector
     if (personId === '__root__') {
       return (
         <g>
@@ -218,10 +238,8 @@ export default function FamilyTree({ people, spouses, links }: Props) {
       );
     }
 
-    // Visual depth: subtract 1 if there's a virtual root
-    const depth = hasVirtualRoot ? rawDepth - 1 : rawDepth;
-    const colors = getGenColor(Math.max(0, depth));
-
+    const generation = (nodeDatum.attributes?.generation as number) ?? 0;
+    const colors = getGenColor(generation);
     const spouse = spouseMap.get(personId);
     const nodeHeight = spouse ? NODE_HEIGHT_SPOUSE : NODE_HEIGHT_BASE;
     const isHighlighted = highlightedId === personId;
@@ -230,7 +248,6 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     const personImg = person?.image_url?.trim() ? person.image_url : PLACEHOLDER;
     const spouseImg = spouse?.image_url?.trim() ? spouse.image_url : PLACEHOLDER;
 
-    // foreignObject for HTML-based node
     return (
       <g>
         <foreignObject
@@ -259,89 +276,40 @@ export default function FamilyTree({ people, spouses, links }: Props) {
             }}
           >
             {/* Gen badge */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '5px',
-                right: '8px',
-                fontSize: '9px',
-                fontWeight: 700,
-                color: colors.border,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                opacity: 0.8,
-              }}
-            >
-              {GEN_COLORS[Math.max(0, depth) % GEN_COLORS.length].label}
+            <div style={{
+              position: 'absolute', top: '5px', right: '8px',
+              fontSize: '9px', fontWeight: 700, color: colors.border,
+              letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.8,
+            }}>
+              {colors.label}
             </div>
 
-            {/* Person row */}
+            {/* Person */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <img
                 src={personImg}
                 alt={nodeDatum.name}
-                width={40}
-                height={40}
-                style={{
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: `2px solid ${colors.border}`,
-                  flexShrink: 0,
-                }}
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = PLACEHOLDER;
-                }}
+                width={40} height={40}
+                style={{ borderRadius: '50%', objectFit: 'cover', border: `2px solid ${colors.border}`, flexShrink: 0 }}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
               />
-              <span
-                style={{
-                  fontWeight: 700,
-                  fontSize: '12px',
-                  color: colors.text,
-                  wordBreak: 'break-word',
-                  lineHeight: 1.3,
-                }}
-              >
+              <span style={{ fontWeight: 700, fontSize: '12px', color: colors.text, wordBreak: 'break-word', lineHeight: 1.3 }}>
                 {nodeDatum.name}
               </span>
             </div>
 
-            {/* Spouse row */}
+            {/* Spouse */}
             {spouse && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginTop: '8px',
-                  paddingTop: '6px',
-                  borderTop: `1px dashed ${colors.border}66`,
-                }}
-              >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '6px', borderTop: `1px dashed ${colors.border}66` }}>
                 <span style={{ fontSize: '13px', color: '#e11d48', flexShrink: 0 }}>♥</span>
                 <img
                   src={spouseImg}
                   alt={spouse.full_name}
-                  width={32}
-                  height={32}
-                  style={{
-                    borderRadius: '50%',
-                    objectFit: 'cover',
-                    border: '2px solid #e11d48',
-                    flexShrink: 0,
-                  }}
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = PLACEHOLDER;
-                  }}
+                  width={32} height={32}
+                  style={{ borderRadius: '50%', objectFit: 'cover', border: '2px solid #e11d48', flexShrink: 0 }}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
                 />
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontStyle: 'italic',
-                    color: '#be185d',
-                    wordBreak: 'break-word',
-                    lineHeight: 1.3,
-                  }}
-                >
+                <span style={{ fontSize: '11px', fontStyle: 'italic', color: '#be185d', wordBreak: 'break-word', lineHeight: 1.3 }}>
                   {spouse.full_name}
                 </span>
               </div>
@@ -352,35 +320,26 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     );
   }
 
-  // ── Legend ──────────────────────────────────────────────────────────────────
+  // ── Legend ────────────────────────────────────────────────────────────────
+
   const legendItems = GEN_COLORS.filter((_, i) => presentGenerations.has(i));
 
   return (
     <div className="w-full">
-      {/* Search bar */}
+      {/* Search */}
       <form onSubmit={handleSearch} className="flex gap-2 mb-4 max-w-sm">
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or ID…"
-          className="flex-1 border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+          placeholder="Search by name…"
+          className="flex-1 border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
         />
-        <button
-          type="submit"
-          className="bg-tan-700 hover:bg-tan-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
-        >
+        <button type="submit" className="bg-accent-600 hover:bg-accent-500 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors">
           Find
         </button>
         {highlightedId && (
-          <button
-            type="button"
-            onClick={() => {
-              setHighlightedId(null);
-              setSearch('');
-            }}
-            className="text-sm text-tan-500 hover:text-tan-700 px-2"
-          >
+          <button type="button" onClick={() => { setHighlightedId(null); setSearch(''); }} className="text-sm text-tan-400 hover:text-tan-600 px-2">
             ✕
           </button>
         )}
@@ -390,140 +349,50 @@ export default function FamilyTree({ people, spouses, links }: Props) {
       <div
         ref={containerRef}
         className="w-full rounded-xl border border-tan-200 bg-white shadow-sm overflow-hidden"
-        style={{ height: '75vh', minHeight: '500px', position: 'relative' }}
+        style={{ height: '80vh', minHeight: '500px', position: 'relative' }}
       >
-        {/* Loading spinner */}
+        {/* Spinner */}
         {!mounted && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'white',
-              zIndex: 10,
-            }}
-          >
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                border: '4px solid #e5e7eb',
-                borderTop: '4px solid #b45309',
-                borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite',
-              }}
-            />
-            <span style={{ marginLeft: '12px', fontSize: '14px', color: '#9ca3af' }}>
-              Loading tree…
-            </span>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', zIndex: 10 }}>
+            <div style={{ width: 40, height: 40, border: '4px solid #e2e8f0', borderTop: '4px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ marginLeft: 12, fontSize: 14, color: '#94a3b8' }}>Loading tree…</span>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
 
-        {/* Zoom controls (top-left) */}
+        {/* Zoom controls */}
         {mounted && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '12px',
-              left: '12px',
-              zIndex: 20,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-            }}
-          >
+          <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {[
-              { label: '+', action: () => setZoom((z) => Math.min(z + 0.1, 3)) },
-              { label: '−', action: () => setZoom((z) => Math.max(z - 0.1, 0.1)) },
+              { label: '+', action: () => setZoom((z) => Math.min(z + 0.15, 3)) },
+              { label: '−', action: () => setZoom((z) => Math.max(z - 0.15, 0.05)) },
               { label: '⌂', action: handleReset },
             ].map(({ label, action }) => (
-              <button
-                key={label}
-                onClick={action}
+              <button key={label} onClick={action}
                 title={label === '⌂' ? 'Reset view' : label === '+' ? 'Zoom in' : 'Zoom out'}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  background: 'white',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: label === '⌂' ? '16px' : '18px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                  color: '#374151',
-                  lineHeight: 1,
-                }}
-              >
+                style={{ width: 32, height: 32, background: 'white', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: label === '⌂' ? 16 : 18, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', color: '#374151' }}>
                 {label}
               </button>
             ))}
           </div>
         )}
 
-        {/* Generation legend (top-right) */}
+        {/* Legend */}
         {mounted && legendItems.length > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '12px',
-              right: '12px',
-              zIndex: 20,
-              background: 'rgba(255,255,255,0.92)',
-              border: '1px solid #e5e7eb',
-              borderRadius: '10px',
-              padding: '10px 14px',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
-              minWidth: '140px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                color: '#6b7280',
-                marginBottom: '6px',
-              }}
-            >
+          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 20, background: 'rgba(255,255,255,0.95)', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', minWidth: 140 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', marginBottom: 6 }}>
               Generations
             </div>
-            {legendItems.map((g, i) => {
-              // Find which generation index this is
-              const genIndex = GEN_COLORS.indexOf(g);
-              if (!presentGenerations.has(genIndex)) return null;
-              return (
-                <div
-                  key={g.label}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: i < legendItems.length - 1 ? '5px' : 0 }}
-                >
-                  <div
-                    style={{
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '3px',
-                      background: g.bg,
-                      border: `2px solid ${g.border}`,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ fontSize: '11px', color: g.text, fontWeight: 600 }}>
-                    {g.label}
-                  </span>
-                </div>
-              );
-            })}
+            {legendItems.map((g, i) => (
+              <div key={g.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: i < legendItems.length - 1 ? 5 : 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: 3, background: g.bg, border: `2px solid ${g.border}`, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: g.text, fontWeight: 600 }}>{g.label}</span>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* react-d3-tree */}
+        {/* Tree */}
         {mounted && treeData.length > 0 && (
           <Tree
             data={treeData[0]}
@@ -531,7 +400,6 @@ export default function FamilyTree({ people, spouses, links }: Props) {
             renderCustomNodeElement={renderNode}
             nodeSize={{ x: 220, y: 180 }}
             separation={{ siblings: 1.1, nonSiblings: 1.5 }}
-            initialDepth={3}
             zoom={zoom}
             translate={translate}
             onUpdate={({ zoom: z, translate: t }) => {
@@ -544,23 +412,10 @@ export default function FamilyTree({ people, spouses, links }: Props) {
         )}
 
         {/* Empty state */}
-        {mounted && people.length === 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#9ca3af',
-            }}
-          >
-            <span style={{ fontSize: '48px', marginBottom: '12px' }}>🌳</span>
-            <p style={{ margin: 0 }}>No family members in the database yet.</p>
-            <p style={{ margin: '4px 0 0', fontSize: '13px' }}>
-              Run the import script or add people via the Admin panel.
-            </p>
+        {mounted && people.filter((p) => !isGenNode(p.id)).length === 0 && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+            <span style={{ fontSize: 48, marginBottom: 12 }}>🌳</span>
+            <p style={{ margin: 0 }}>No family members yet.</p>
           </div>
         )}
       </div>
