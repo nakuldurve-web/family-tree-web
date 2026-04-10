@@ -72,13 +72,12 @@ const isGenNode = (id: string) => /^Generation_\d+$/i.test(id);
 /**
  * Compute generation number (0-indexed) purely from tree depth.
  * Roots (no parent, or parent is a Generation_X placeholder) = 0.
- * Each level of children adds 1. Ignores the tooltip field entirely.
+ * Each level of children adds 1.
  */
 function computeGenerations(people: Person[]): Map<string, number> {
   const visible = people.filter((p) => !isGenNode(p.id));
   const visibleIds = new Set(visible.map((p) => p.id));
 
-  // Build children map
   const childrenOf = new Map<string, string[]>();
   const roots: string[] = [];
 
@@ -93,7 +92,6 @@ function computeGenerations(people: Person[]): Map<string, number> {
     }
   }
 
-  // BFS from roots
   const genMap = new Map<string, number>();
   const queue: Array<{ id: string; depth: number }> = roots.map((id) => ({ id, depth: 0 }));
   while (queue.length > 0) {
@@ -120,7 +118,6 @@ function buildTreeData(
   genMap: Map<string, number>,
   highlightedId: string | null
 ): TreeNode[] {
-  // Exclude Generation_X placeholder nodes
   const visible = people.filter((p) => !isGenNode(p.id));
   const visibleIds = new Set(visible.map((p) => p.id));
   const nodeMap = new Map<string, TreeNode>();
@@ -141,11 +138,9 @@ function buildTreeData(
   const roots: TreeNode[] = [];
   for (const p of visible) {
     const node = nodeMap.get(p.id)!;
-    // Attach to parent if parent is a visible approved person
     if (p.parent_id && visibleIds.has(p.parent_id)) {
       nodeMap.get(p.parent_id)?.children?.push(node);
     } else {
-      // Parent is a Generation node, null, or not approved → root
       roots.push(node);
     }
   }
@@ -153,7 +148,6 @@ function buildTreeData(
   if (roots.length === 0) return [];
   if (roots.length === 1) return [roots[0]];
 
-  // Wrap multiple roots in a hidden virtual root
   return [
     {
       name: 'Family',
@@ -163,7 +157,7 @@ function buildTreeData(
   ];
 }
 
-// ─── CSS keyframes (injected once) ────────────────────────────────────────────
+// ─── CSS keyframes ────────────────────────────────────────────────────────────
 
 const GLOBAL_STYLES = `
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -171,7 +165,161 @@ const GLOBAL_STYLES = `
     0%, 100% { box-shadow: 0 0 0 3px #f59e0b, 0 0 20px 6px #f59e0baa; }
     50%       { box-shadow: 0 0 0 5px #f59e0b, 0 0 32px 12px #f59e0b88; }
   }
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
 `;
+
+// ─── Detail panel ─────────────────────────────────────────────────────────────
+
+interface DetailPanelProps {
+  person: Person;
+  spouse: Spouse | undefined;
+  links: Link[];
+  genLabel: string;
+  onClose: () => void;
+}
+
+function DetailPanel({ person, spouse, links, genLabel, onClose }: DetailPanelProps) {
+  const personImg = person.image_url?.trim() ? person.image_url : PLACEHOLDER;
+  const spouseImg = spouse?.image_url?.trim() ? spouse.image_url : PLACEHOLDER;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'absolute', inset: 0, zIndex: 30,
+          background: 'rgba(0,0,0,0.25)',
+        }}
+      />
+
+      {/* Panel */}
+      <div
+        style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0, width: '320px',
+          background: 'white', zIndex: 31, overflowY: 'auto',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.15)',
+          animation: 'slideIn 0.22s ease-out',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8' }}>
+            {genLabel}
+          </span>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#94a3b8', lineHeight: 1, padding: '2px 4px' }}
+            title="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ padding: '20px 16px', flex: 1 }}>
+          {/* Person photo + name */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 20 }}>
+            <img
+              src={personImg}
+              alt={person.full_name}
+              width={96} height={96}
+              style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #e2e8f0', marginBottom: 12 }}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
+            />
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
+              {person.full_name}
+            </h2>
+          </div>
+
+          {/* Spouse */}
+          {spouse && (
+            <div style={{
+              background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 10,
+              padding: '12px 14px', marginBottom: 20,
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <img
+                src={spouseImg}
+                alt={spouse.full_name}
+                width={48} height={48}
+                style={{ borderRadius: '50%', objectFit: 'cover', border: '2px solid #e11d48', flexShrink: 0 }}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
+              />
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#e11d48', marginBottom: 2 }}>
+                  ♥ Spouse
+                </div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#881337' }}>
+                  {spouse.full_name}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Links */}
+          {links.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', marginBottom: 10 }}>
+                Links & Resources
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {links.map((link) => (
+                  <a
+                    key={link.id}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 10,
+                      background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
+                      padding: '10px 12px', textDecoration: 'none',
+                      transition: 'border-color 0.15s, background 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLAnchorElement).style.background = '#eff6ff';
+                      (e.currentTarget as HTMLAnchorElement).style.borderColor = '#93c5fd';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLAnchorElement).style.background = '#f8fafc';
+                      (e.currentTarget as HTMLAnchorElement).style.borderColor = '#e2e8f0';
+                    }}
+                  >
+                    <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>🔗</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1e40af', lineHeight: 1.3 }}>
+                        {link.description || 'View link'}
+                      </div>
+                      {link.display_html && (
+                        <div
+                          style={{ fontSize: 11, color: '#64748b', marginTop: 3, lineHeight: 1.4 }}
+                          dangerouslySetInnerHTML={{ __html: link.display_html }}
+                        />
+                      )}
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2, wordBreak: 'break-all' }}>
+                        {link.url}
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!spouse && links.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13, marginTop: 20 }}>
+              No additional information recorded yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -182,8 +330,8 @@ export default function FamilyTree({ people, spouses, links }: Props) {
   const [translate, setTranslate] = useState({ x: 0, y: 60 });
   const [search, setSearch] = useState('');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
 
-  // Stores the tree-space position of the highlighted node (set during renderNode)
   const highlightedPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const INITIAL_ZOOM = 0.5;
@@ -199,7 +347,6 @@ export default function FamilyTree({ people, spouses, links }: Props) {
   const genMap = computeGenerations(people);
   const treeData = buildTreeData(people, spouseMap, genMap, highlightedId);
 
-  // Which generations are actually present (for legend)
   const presentGenerations = new Set<number>();
   for (const p of people) {
     if (!isGenNode(p.id)) {
@@ -215,10 +362,9 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     }
   }, []);
 
-  // Pan & zoom to highlighted node whenever highlightedId changes
+  // Pan & zoom to highlighted node
   useEffect(() => {
     if (!highlightedId || !containerRef.current) return;
-    // Give react-d3-tree one frame to render and populate highlightedPosRef
     const timer = setTimeout(() => {
       const pos = highlightedPosRef.current;
       if (!pos) return;
@@ -249,7 +395,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
       )
     );
     if (match) {
-      highlightedPosRef.current = null; // clear stale position
+      highlightedPosRef.current = null;
       setHighlightedId(match.id);
     } else {
       setHighlightedId(null);
@@ -262,7 +408,6 @@ export default function FamilyTree({ people, spouses, links }: Props) {
   function renderNode({ nodeDatum, toggleNode, hierarchyPointNode }: CustomNodeElementProps): JSX.Element {
     const personId = (nodeDatum.attributes?.personId as string) ?? '';
 
-    // Virtual root — invisible connector
     if (personId === '__root__') {
       return (
         <g>
@@ -277,12 +422,10 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     const nodeHeight = spouse ? NODE_HEIGHT_SPOUSE : NODE_HEIGHT_BASE;
     const isHighlighted = (nodeDatum.attributes?.highlighted as boolean) ?? false;
 
-    // Capture position of highlighted node for centering
     if (isHighlighted && hierarchyPointNode) {
       highlightedPosRef.current = { x: hierarchyPointNode.x, y: hierarchyPointNode.y };
     }
 
-    // Collapsed indicator — node has children but they are hidden
     const rd3t = (nodeDatum as unknown as { __rd3t?: { collapsed?: boolean } }).__rd3t;
     const isCollapsed = !!(rd3t?.collapsed);
     const childCount = nodeDatum.children?.length ?? 0;
@@ -291,6 +434,9 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     const person = people.find((p) => p.id === personId);
     const personImg = person?.image_url?.trim() ? person.image_url : PLACEHOLDER;
     const spouseImg = spouse?.image_url?.trim() ? spouse.image_url : PLACEHOLDER;
+
+    const personLinks = linksMap.get(personId) ?? [];
+    const hasDetails = !!(spouse || personLinks.length > 0);
 
     return (
       <g>
@@ -322,7 +468,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
                   : '0 1px 4px rgba(0,0,0,0.12)',
               }}
             >
-              {/* "Found" badge for highlighted node */}
+              {/* "Found" badge */}
               {isHighlighted && (
                 <div style={{
                   position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)',
@@ -343,7 +489,27 @@ export default function FamilyTree({ people, spouses, links }: Props) {
                 {colors.label}
               </div>
 
-              {/* Person */}
+              {/* Info button — only if there's something to show */}
+              {hasDetails && (
+                <div
+                  onClick={(e) => { e.stopPropagation(); setSelectedPersonId(personId); }}
+                  title="View details"
+                  style={{
+                    position: 'absolute', bottom: '6px', right: '8px',
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: colors.border, color: 'white',
+                    fontSize: '10px', fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', flexShrink: 0, lineHeight: 1,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    userSelect: 'none',
+                  }}
+                >
+                  i
+                </div>
+              )}
+
+              {/* Person row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <img
                   src={personImg}
@@ -360,12 +526,13 @@ export default function FamilyTree({ people, spouses, links }: Props) {
                   fontWeight: 700, fontSize: '12px',
                   color: isHighlighted ? '#78350f' : colors.text,
                   wordBreak: 'break-word', lineHeight: 1.3,
+                  paddingRight: hasDetails ? '20px' : '0',
                 }}>
                   {nodeDatum.name}
                 </span>
               </div>
 
-              {/* Spouse */}
+              {/* Spouse row */}
               {spouse && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', paddingTop: '6px', borderTop: `1px dashed ${isHighlighted ? '#f59e0b88' : colors.border + '66'}` }}>
                   <span style={{ fontSize: '13px', color: '#e11d48', flexShrink: 0 }}>♥</span>
@@ -413,16 +580,23 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     );
   }
 
+  // ── Detail panel data ─────────────────────────────────────────────────────
+
+  const selectedPerson = selectedPersonId
+    ? people.find((p) => p.id === selectedPersonId) ?? null
+    : null;
+  const selectedGenIndex = selectedPersonId ? (genMap.get(selectedPersonId) ?? 0) : 0;
+  const selectedGenLabel = GEN_COLORS[selectedGenIndex % GEN_COLORS.length]?.label ?? '';
+
   // ── Legend ────────────────────────────────────────────────────────────────
 
   const legendItems = GEN_COLORS.filter((_, i) => presentGenerations.has(i));
 
   return (
     <div className="w-full">
-      {/* Inject global keyframes */}
       <style>{GLOBAL_STYLES}</style>
 
-      {/* Search */}
+      {/* Search bar */}
       <form onSubmit={handleSearch} className="flex gap-2 mb-4 max-w-sm">
         <input
           type="search"
@@ -512,6 +686,17 @@ export default function FamilyTree({ people, spouses, links }: Props) {
             <span style={{ fontSize: 48, marginBottom: 12 }}>🌳</span>
             <p style={{ margin: 0 }}>No family members yet.</p>
           </div>
+        )}
+
+        {/* Detail panel (rendered inside the tree container so it overlays the tree) */}
+        {mounted && selectedPerson && (
+          <DetailPanel
+            person={selectedPerson}
+            spouse={spouseMap.get(selectedPerson.id)}
+            links={linksMap.get(selectedPerson.id) ?? []}
+            genLabel={selectedGenLabel}
+            onClose={() => setSelectedPersonId(null)}
+          />
         )}
       </div>
     </div>
