@@ -44,12 +44,12 @@ interface Props {
 // ─── Generation color palette ────────────────────────────────────────────────
 
 const GEN_COLORS = [
-  { border: '#7c3d12', bg: '#fef3c7', text: '#78350f', label: 'Generation 1' },
-  { border: '#b45309', bg: '#fff7ed', text: '#92400e', label: 'Generation 2' },
-  { border: '#15803d', bg: '#f0fdf4', text: '#14532d', label: 'Generation 3' },
-  { border: '#0369a1', bg: '#f0f9ff', text: '#0c4a6e', label: 'Generation 4' },
-  { border: '#6d28d9', bg: '#f5f3ff', text: '#4c1d95', label: 'Generation 5' },
-  { border: '#be185d', bg: '#fdf2f8', text: '#9d174d', label: 'Generation 6' },
+  { border: '#7c3aed', bg: '#f5f3ff', text: '#4c1d95', label: 'Generation 1' },  // violet
+  { border: '#2563eb', bg: '#eff6ff', text: '#1e3a8a', label: 'Generation 2' },  // blue
+  { border: '#0891b2', bg: '#ecfeff', text: '#164e63', label: 'Generation 3' },  // cyan
+  { border: '#059669', bg: '#ecfdf5', text: '#064e3b', label: 'Generation 4' },  // emerald
+  { border: '#d97706', bg: '#fffbeb', text: '#78350f', label: 'Generation 5' },  // amber
+  { border: '#e11d48', bg: '#fff1f2', text: '#881337', label: 'Generation 6' },  // rose
 ];
 
 function getGenColor(depth: number) {

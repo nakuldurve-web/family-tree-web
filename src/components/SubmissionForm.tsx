@@ -177,7 +177,7 @@ export default function SubmissionForm() {
   ];
 
   const inputClass =
-    'w-full border border-tan-300 rounded-lg px-3 py-2 text-sm text-tan-900 focus:outline-none focus:ring-2 focus:ring-tan-400 focus:border-transparent bg-white';
+    'w-full border border-tan-300 rounded-lg px-3 py-2 text-sm text-tan-900 focus:outline-none focus:ring-2 focus:ring-accent-400 focus:border-transparent bg-white';
   const labelClass = 'block text-sm font-medium text-tan-700 mb-1';
   const sectionLabel = 'text-xs font-semibold text-tan-500 uppercase tracking-wider mb-3 mt-5 block';
 
@@ -385,7 +385,7 @@ export default function SubmissionForm() {
             <button
               type="submit"
               disabled={submitting || uploadingImage}
-              className="w-full bg-tan-700 hover:bg-tan-600 disabled:bg-tan-300 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
+              className="w-full bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
             >
               {submitting ? 'Submitting…' : 'Submit Person for Review'}
             </button>
@@ -469,7 +469,7 @@ export default function SubmissionForm() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-tan-700 hover:bg-tan-600 disabled:bg-tan-300 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
+              className="w-full bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
             >
               {submitting ? 'Submitting…' : 'Submit Link for Review'}
             </button>
@@ -539,7 +539,7 @@ export default function SubmissionForm() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-tan-700 hover:bg-tan-600 disabled:bg-tan-300 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
+              className="w-full bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
             >
               {submitting ? 'Submitting…' : 'Send Correction Report'}
             </button>

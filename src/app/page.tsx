@@ -51,10 +51,10 @@ async function getTreeData(): Promise<TreeData | null> {
       db.prepare('SELECT id, description, gdrive_link, display_order FROM galleries ORDER BY display_order ASC, id ASC').all(),
     ]);
     return {
-      people: peopleRes.results as Person[],
-      spouses: spousesRes.results as Spouse[],
-      links: linksRes.results as Link[],
-      galleries: galleriesRes.results as Gallery[],
+      people: peopleRes.results as unknown as Person[],
+      spouses: spousesRes.results as unknown as Spouse[],
+      links: linksRes.results as unknown as Link[],
+      galleries: galleriesRes.results as unknown as Gallery[],
     };
   } catch {
     return null;

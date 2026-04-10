@@ -468,7 +468,7 @@ export default function AdminPage() {
                         placeholder={f.placeholder}
                         value={(newPerson as Record<string, string>)[f.key]}
                         onChange={(e) => setNewPerson((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                        className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                        className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                       />
                     </div>
                   ))}
@@ -478,14 +478,14 @@ export default function AdminPage() {
                       rows={2}
                       value={newPerson.tooltip}
                       onChange={(e) => setNewPerson((prev) => ({ ...prev, tooltip: e.target.value }))}
-                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
                   </div>
                   <div className="sm:col-span-2">
                     <button
                       type="submit"
                       disabled={addingPerson}
-                      className="bg-tan-700 hover:bg-tan-600 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                      className="bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
                     >
                       {addingPerson ? 'Adding…' : 'Add Person'}
                     </button>
@@ -499,7 +499,7 @@ export default function AdminPage() {
                 placeholder="Search by ID or name…"
                 value={searchPeople}
                 onChange={(e) => setSearchPeople(e.target.value)}
-                className="w-full border border-tan-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-tan-400"
+                className="w-full border border-tan-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-accent-400"
               />
 
               {/* Editing modal */}
@@ -519,7 +519,7 @@ export default function AdminPage() {
                             type="text"
                             value={(editForm as Record<string, string | null>)[f.key] as string ?? ''}
                             onChange={(e) => setEditForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                            className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                            className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                           />
                         </div>
                       ))}
@@ -529,7 +529,7 @@ export default function AdminPage() {
                           rows={3}
                           value={(editForm.tooltip as string) ?? ''}
                           onChange={(e) => setEditForm((prev) => ({ ...prev, tooltip: e.target.value }))}
-                          className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                          className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                         />
                       </div>
                       <div>
@@ -537,7 +537,7 @@ export default function AdminPage() {
                         <select
                           value={(editForm.status as string) ?? 'approved'}
                           onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}
-                          className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                          className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                         >
                           <option value="approved">approved</option>
                           <option value="hidden">hidden</option>
@@ -548,7 +548,7 @@ export default function AdminPage() {
                       <button
                         onClick={handleSavePerson}
                         disabled={savingEdit}
-                        className="bg-tan-700 hover:bg-tan-600 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                        className="bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
                       >
                         {savingEdit ? 'Saving…' : 'Save'}
                       </button>
@@ -631,7 +631,7 @@ export default function AdminPage() {
                       required
                       value={newLink.person_id}
                       onChange={(e) => setNewLink((p) => ({ ...p, person_id: e.target.value }))}
-                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                     >
                       <option value="">Select person…</option>
                       {people.map((p) => (
@@ -646,7 +646,7 @@ export default function AdminPage() {
                       required
                       value={newLink.url}
                       onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
-                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
                   </div>
                   <div>
@@ -655,7 +655,7 @@ export default function AdminPage() {
                       type="text"
                       value={newLink.description}
                       onChange={(e) => setNewLink((p) => ({ ...p, description: e.target.value }))}
-                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
                   </div>
                   <div>
@@ -664,14 +664,14 @@ export default function AdminPage() {
                       type="text"
                       value={newLink.display_html}
                       onChange={(e) => setNewLink((p) => ({ ...p, display_html: e.target.value }))}
-                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-tan-400"
+                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
                   </div>
                   <div className="sm:col-span-2">
                     <button
                       type="submit"
                       disabled={addingLink}
-                      className="bg-tan-700 hover:bg-tan-600 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                      className="bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
                     >
                       {addingLink ? 'Adding…' : 'Add Link'}
                     </button>
