@@ -92,8 +92,19 @@ function computeGenerations(people: Person[]): Map<string, number> {
     }
   }
 
+  // Build a lookup so we can check parent_ids for roots
+  const personById = new Map(visible.map((p) => [p.id, p]));
+
   const genMap = new Map<string, number>();
-  const queue: Array<{ id: string; depth: number }> = roots.map((id) => ({ id, depth: 0 }));
+  const queue: Array<{ id: string; depth: number }> = roots.map((id) => {
+    // If this root's parent is a Generation_X placeholder, seed its depth
+    // from the number in that id (e.g. Generation_4 → depth 3, i.e. Gen 4)
+    const parentId = personById.get(id)?.parent_id ?? '';
+    const genMatch = parentId.match(/^Generation_(\d+)$/i);
+    const startDepth = genMatch ? parseInt(genMatch[1]) - 1 : 0;
+    return { id, depth: startDepth };
+  });
+
   while (queue.length > 0) {
     const { id, depth } = queue.shift()!;
     genMap.set(id, depth);
