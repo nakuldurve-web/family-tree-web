@@ -39,7 +39,14 @@ interface Link {
   display_html: string;
 }
 
-type Tab = 'submissions' | 'people' | 'links';
+interface Spouse {
+  id: string;
+  full_name: string;
+  person_id: string;
+  image_url: string;
+}
+
+type Tab = 'submissions' | 'people' | 'spouses' | 'links';
 
 function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(' ');
@@ -50,6 +57,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('submissions');
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [spouses, setSpouses] = useState<Spouse[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchPeople, setSearchPeople] = useState('');
@@ -65,6 +73,13 @@ export default function AdminPage() {
   });
   const [addingPerson, setAddingPerson] = useState(false);
 
+  // New spouse form
+  const [newSpouse, setNewSpouse] = useState({ id: '', full_name: '', person_id: '', image_url: '' });
+  const [addingSpouse, setAddingSpouse] = useState(false);
+  const [editingSpouse, setEditingSpouse] = useState<Spouse | null>(null);
+  const [editSpouseForm, setEditSpouseForm] = useState<Partial<Spouse>>({});
+  const [savingSpouseEdit, setSavingSpouseEdit] = useState(false);
+
   // New link form
   const [newLink, setNewLink] = useState({ person_id: '', url: '', description: '', display_html: '' });
   const [addingLink, setAddingLink] = useState(false);
@@ -77,9 +92,10 @@ export default function AdminPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [subRes, pplRes, lnkRes] = await Promise.all([
+      const [subRes, pplRes, spouseRes, lnkRes] = await Promise.all([
         fetch('/api/admin/submissions'),
         fetch('/api/admin/people'),
+        fetch('/api/admin/spouses'),
         fetch('/api/admin/links'),
       ]);
 
@@ -88,14 +104,16 @@ export default function AdminPage() {
         return;
       }
 
-      const [subData, pplData, lnkData] = await Promise.all([
+      const [subData, pplData, spouseData, lnkData] = await Promise.all([
         subRes.json() as Promise<{ submissions: Submission[] }>,
         pplRes.json() as Promise<{ people: Person[] }>,
+        spouseRes.json() as Promise<{ spouses: Spouse[] }>,
         lnkRes.json() as Promise<{ links: Link[] }>,
       ]);
 
       setSubmissions(subData.submissions ?? []);
       setPeople(pplData.people ?? []);
+      setSpouses(spouseData.spouses ?? []);
       setLinks(lnkData.links ?? []);
     } catch {
       showToast('Failed to load data', false);
@@ -159,6 +177,68 @@ export default function AdminPage() {
       const res = await fetch(`/api/admin/people/${id}`, { method: 'DELETE' });
       if (res.ok) {
         showToast('Person deleted', true);
+        await fetchAll();
+      } else {
+        showToast('Failed to delete', false);
+      }
+    } catch {
+      showToast('Network error', false);
+    }
+  }
+
+  async function handleAddSpouse(e: React.FormEvent) {
+    e.preventDefault();
+    setAddingSpouse(true);
+    try {
+      const res = await fetch('/api/admin/spouses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSpouse),
+      });
+      if (res.ok) {
+        showToast('Spouse added', true);
+        setNewSpouse({ id: '', full_name: '', person_id: '', image_url: '' });
+        await fetchAll();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast((err as { error?: string }).error ?? 'Failed to add spouse', false);
+      }
+    } catch {
+      showToast('Network error', false);
+    } finally {
+      setAddingSpouse(false);
+    }
+  }
+
+  async function handleSaveSpouse() {
+    if (!editingSpouse) return;
+    setSavingSpouseEdit(true);
+    try {
+      const res = await fetch('/api/admin/spouses', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingSpouse.id, ...editSpouseForm }),
+      });
+      if (res.ok) {
+        showToast('Spouse updated', true);
+        setEditingSpouse(null);
+        await fetchAll();
+      } else {
+        showToast('Failed to update', false);
+      }
+    } catch {
+      showToast('Network error', false);
+    } finally {
+      setSavingSpouseEdit(false);
+    }
+  }
+
+  async function handleDeleteSpouse(id: string) {
+    if (!confirm(`Delete spouse "${id}"?`)) return;
+    try {
+      const res = await fetch(`/api/admin/spouses?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Spouse deleted', true);
         await fetchAll();
       } else {
         showToast('Failed to delete', false);
@@ -241,6 +321,7 @@ export default function AdminPage() {
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: 'submissions', label: 'Submissions', count: pendingSubmissions.length },
     { key: 'people', label: 'People', count: people.length },
+    { key: 'spouses', label: 'Spouses', count: spouses.length },
     { key: 'links', label: 'Links', count: links.length },
   ];
 
@@ -611,6 +692,157 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* SPOUSES TAB */}
+          {activeTab === 'spouses' && (
+            <div>
+              <h2 className="text-xl font-semibold text-tan-700 mb-4">Spouses ({spouses.length})</h2>
+
+              {/* Add spouse form */}
+              <details className="mb-6 bg-white border border-tan-200 rounded-xl p-4">
+                <summary className="cursor-pointer font-medium text-tan-700 hover:text-tan-900">
+                  + Add new spouse
+                </summary>
+                <form onSubmit={handleAddSpouse} className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { key: 'id', label: 'Spouse ID (unique)', placeholder: 'e.g. annu', required: true },
+                    { key: 'full_name', label: 'Full Name', placeholder: 'Annu Durve', required: true },
+                    { key: 'image_url', label: 'Image URL', placeholder: 'https://...' },
+                  ].map((f) => (
+                    <div key={f.key}>
+                      <label className="block text-xs font-medium text-tan-600 mb-1">{f.label}</label>
+                      <input
+                        type="text"
+                        required={f.required}
+                        placeholder={f.placeholder}
+                        value={(newSpouse as Record<string, string>)[f.key]}
+                        onChange={(e) => setNewSpouse((p) => ({ ...p, [f.key]: e.target.value }))}
+                        className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="block text-xs font-medium text-tan-600 mb-1">Spouse of (Person ID)</label>
+                    <select
+                      required
+                      value={newSpouse.person_id}
+                      onChange={(e) => setNewSpouse((p) => ({ ...p, person_id: e.target.value }))}
+                      className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
+                    >
+                      <option value="">Select person…</option>
+                      {people.filter(p => p.status === 'approved').map((p) => (
+                        <option key={p.id} value={p.id}>{p.id} — {p.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button
+                      type="submit"
+                      disabled={addingSpouse}
+                      className="bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      {addingSpouse ? 'Adding…' : 'Add Spouse'}
+                    </button>
+                  </div>
+                </form>
+              </details>
+
+              {/* Edit spouse modal */}
+              {editingSpouse && (
+                <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+                    <h3 className="text-lg font-bold text-tan-800 mb-4">Edit: {editingSpouse.id}</h3>
+                    <div className="space-y-3">
+                      {[
+                        { key: 'full_name', label: 'Full Name' },
+                        { key: 'image_url', label: 'Image URL' },
+                      ].map((f) => (
+                        <div key={f.key}>
+                          <label className="block text-xs font-medium text-tan-600 mb-1">{f.label}</label>
+                          <input
+                            type="text"
+                            value={(editSpouseForm as Record<string, string>)[f.key] ?? ''}
+                            onChange={(e) => setEditSpouseForm((p) => ({ ...p, [f.key]: e.target.value }))}
+                            className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
+                          />
+                        </div>
+                      ))}
+                      <div>
+                        <label className="block text-xs font-medium text-tan-600 mb-1">Spouse of (Person ID)</label>
+                        <select
+                          value={(editSpouseForm.person_id as string) ?? ''}
+                          onChange={(e) => setEditSpouseForm((p) => ({ ...p, person_id: e.target.value }))}
+                          className="w-full border border-tan-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400"
+                        >
+                          {people.filter(p => p.status === 'approved').map((p) => (
+                            <option key={p.id} value={p.id}>{p.id} — {p.full_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-5">
+                      <button
+                        onClick={handleSaveSpouse}
+                        disabled={savingSpouseEdit}
+                        className="bg-accent-600 hover:bg-accent-500 disabled:bg-tan-300 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        {savingSpouseEdit ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setEditingSpouse(null)}
+                        className="border border-tan-300 text-tan-700 px-5 py-2 rounded-lg text-sm font-medium hover:bg-tan-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Spouses list */}
+              <div className="overflow-x-auto rounded-xl border border-tan-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-tan-100 text-tan-700">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold">ID</th>
+                      <th className="px-4 py-2 text-left font-semibold">Full Name</th>
+                      <th className="px-4 py-2 text-left font-semibold">Spouse of</th>
+                      <th className="px-4 py-2 text-left font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-tan-100">
+                    {spouses.map((s) => {
+                      const person = people.find((p) => p.id === s.person_id);
+                      return (
+                        <tr key={s.id} className="hover:bg-tan-50 transition-colors">
+                          <td className="px-4 py-2 font-mono text-xs text-tan-700">{s.id}</td>
+                          <td className="px-4 py-2">{s.full_name}</td>
+                          <td className="px-4 py-2 font-mono text-xs text-tan-500">
+                            {s.person_id}
+                            {person && <span className="text-tan-400 ml-1">— {person.full_name}</span>}
+                          </td>
+                          <td className="px-4 py-2 flex gap-2">
+                            <button
+                              onClick={() => { setEditingSpouse(s); setEditSpouseForm({ full_name: s.full_name, person_id: s.person_id, image_url: s.image_url }); }}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSpouse(s.id)}
+                              className="text-xs text-red-600 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
