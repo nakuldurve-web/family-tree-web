@@ -240,10 +240,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
           height={nodeHeight + 10}
           style={{ overflow: 'visible' }}
         >
-          {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-          {/* @ts-ignore – xmlns required for foreignObject in SVG */}
           <div
-            xmlns="http://www.w3.org/1999/xhtml"
             onClick={toggleNode}
             style={{
               background: colors.bg,
