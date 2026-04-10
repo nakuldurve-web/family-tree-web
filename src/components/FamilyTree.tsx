@@ -70,37 +70,33 @@ const isGenNode = (id: string) => /^Generation_\d+$/i.test(id);
 
 /**
  * Compute generation number (0-indexed) for each person.
- * - If a person's parent_id is "Generation_N", they are in generation N-1.
- * - Otherwise, they inherit parent's generation + 1.
- * - Fallback to 0 for orphans.
+ * The tooltip field stores the generation number as a plain integer string (e.g. "2", "3").
+ * Fall back to parent's generation + 1 for anyone without a numeric tooltip.
  */
 function computeGenerations(people: Person[]): Map<string, number> {
   const personMap = new Map(people.map((p) => [p.id, p]));
   const genMap = new Map<string, number>();
 
-  // First pass: anchor people whose direct parent is a Generation node
+  // First pass: people with a numeric tooltip
   for (const p of people) {
-    const m = p.parent_id?.match(/^Generation_(\d+)$/i);
-    if (m) genMap.set(p.id, parseInt(m[1]) - 1);
+    const n = parseInt(p.tooltip);
+    if (!isNaN(n) && n >= 1) genMap.set(p.id, n - 1); // 0-indexed
   }
 
-  // Second pass: propagate through person-to-person links (BFS)
+  // Second pass: propagate through parent links (BFS)
   let changed = true;
   while (changed) {
     changed = false;
     for (const p of people) {
       if (genMap.has(p.id)) continue;
-      if (p.parent_id && !isGenNode(p.parent_id) && personMap.has(p.parent_id)) {
-        const parentGen = genMap.get(p.parent_id);
-        if (parentGen !== undefined) {
-          genMap.set(p.id, parentGen + 1);
-          changed = true;
-        }
+      if (p.parent_id && personMap.has(p.parent_id)) {
+        const pg = genMap.get(p.parent_id);
+        if (pg !== undefined) { genMap.set(p.id, pg + 1); changed = true; }
       }
     }
   }
 
-  // Third pass: fallback for any unresolved nodes
+  // Fallback
   for (const p of people) {
     if (!genMap.has(p.id)) genMap.set(p.id, 0);
   }
@@ -111,14 +107,15 @@ function computeGenerations(people: Person[]): Map<string, number> {
 // ─── Tree data builder ────────────────────────────────────────────────────────
 
 interface TreeNode extends RawNodeDatum {
-  attributes: { personId: string; generation: number; hasSpouse: boolean };
+  attributes: { personId: string; generation: number; hasSpouse: boolean; highlighted: boolean };
   children?: TreeNode[];
 }
 
 function buildTreeData(
   people: Person[],
   spouseMap: Map<string, Spouse>,
-  genMap: Map<string, number>
+  genMap: Map<string, number>,
+  highlightedId: string | null
 ): TreeNode[] {
   // Exclude Generation_X placeholder nodes
   const visible = people.filter((p) => !isGenNode(p.id));
@@ -132,6 +129,7 @@ function buildTreeData(
         personId: p.id,
         generation: genMap.get(p.id) ?? 0,
         hasSpouse: spouseMap.has(p.id),
+        highlighted: p.id === highlightedId,
       },
       children: [],
     });
@@ -156,7 +154,7 @@ function buildTreeData(
   return [
     {
       name: 'Family',
-      attributes: { personId: '__root__', generation: -1, hasSpouse: false },
+      attributes: { personId: '__root__', generation: -1, hasSpouse: false, highlighted: false },
       children: roots,
     },
   ];
@@ -183,7 +181,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
   }
 
   const genMap = computeGenerations(people);
-  const treeData = buildTreeData(people, spouseMap, genMap);
+  const treeData = buildTreeData(people, spouseMap, genMap, highlightedId);
 
   // Which generations are actually present (for legend)
   const presentGenerations = new Set<number>();
@@ -242,7 +240,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     const colors = getGenColor(generation);
     const spouse = spouseMap.get(personId);
     const nodeHeight = spouse ? NODE_HEIGHT_SPOUSE : NODE_HEIGHT_BASE;
-    const isHighlighted = highlightedId === personId;
+    const isHighlighted = (nodeDatum.attributes?.highlighted as boolean) ?? false;
 
     const person = people.find((p) => p.id === personId);
     const personImg = person?.image_url?.trim() ? person.image_url : PLACEHOLDER;
