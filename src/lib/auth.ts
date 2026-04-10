@@ -29,7 +29,7 @@ export function isAdmin(request: Request): boolean {
 export function buildSessionCookie(password: string): string {
   const token = btoa(password);
   // 7-day session, HttpOnly, SameSite=Strict
-  return `admin_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${60 * 60 * 24 * 7}`;
+  return `admin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${60 * 60 * 24 * 7}`;
 }
 
 /**

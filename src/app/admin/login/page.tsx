@@ -25,7 +25,12 @@ export default function AdminLoginPage() {
         router.push('/admin');
         router.refresh();
       } else {
-        setError('Incorrect password. Please try again.');
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        if (res.status === 500) {
+          setError(`Server error: ${body.error ?? 'unknown'}. Check that ADMIN_PASSWORD is set in Cloudflare Pages settings.`);
+        } else {
+          setError('Incorrect password. Please try again.');
+        }
       }
     } catch {
       setError('Network error. Please try again.');
