@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const db = getDB();
     const result = await db
-      .prepare('SELECT id, full_name, parent_id, tooltip, image_url, status FROM people ORDER BY created_at ASC')
+      .prepare('SELECT id, full_name, alt_name, parent_id, tooltip, image_url, status FROM people ORDER BY created_at ASC')
       .all();
 
     return Response.json({ people: result.results });
@@ -24,6 +24,7 @@ export async function GET(request: Request) {
 interface NewPersonBody {
   id: string;
   full_name: string;
+  alt_name?: string;
   parent_id?: string;
   tooltip?: string;
   image_url?: string;
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json() as NewPersonBody;
-    const { id, full_name, parent_id = '', tooltip = '', image_url = '' } = body;
+    const { id, full_name, alt_name = '', parent_id = '', tooltip = '', image_url = '' } = body;
 
     if (!id || !full_name) {
       return Response.json({ error: 'id and full_name are required' }, { status: 400 });
@@ -56,10 +57,10 @@ export async function POST(request: Request) {
 
     await db
       .prepare(
-        `INSERT INTO people (id, full_name, parent_id, tooltip, image_url, status)
-         VALUES (?, ?, ?, ?, ?, 'approved')`
+        `INSERT INTO people (id, full_name, alt_name, parent_id, tooltip, image_url, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'approved')`
       )
-      .bind(id, full_name, parent_id || null, tooltip, image_url)
+      .bind(id, full_name, alt_name, parent_id || null, tooltip, image_url)
       .run();
 
     return Response.json({ success: true }, { status: 201 });

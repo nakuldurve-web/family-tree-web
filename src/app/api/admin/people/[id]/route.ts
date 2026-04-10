@@ -5,6 +5,7 @@ import { getDB } from '@/lib/db';
 
 interface PatchBody {
   full_name?: string;
+  alt_name?: string;
   parent_id?: string | null;
   tooltip?: string;
   image_url?: string;
@@ -27,6 +28,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const values: unknown[] = [];
 
     if (body.full_name !== undefined) { updates.push('full_name = ?'); values.push(body.full_name); }
+    if (body.alt_name !== undefined) { updates.push('alt_name = ?'); values.push(body.alt_name); }
     if (body.parent_id !== undefined) { updates.push('parent_id = ?'); values.push(body.parent_id || null); }
     if (body.tooltip !== undefined) { updates.push('tooltip = ?'); values.push(body.tooltip); }
     if (body.image_url !== undefined) { updates.push('image_url = ?'); values.push(body.image_url); }

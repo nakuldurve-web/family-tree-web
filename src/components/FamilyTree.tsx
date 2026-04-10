@@ -14,6 +14,7 @@ const Tree = dynamic(
 interface Person {
   id: string;
   full_name: string;
+  alt_name: string;
   parent_id: string | null;
   tooltip: string;
   image_url: string;
@@ -244,6 +245,11 @@ function DetailPanel({ person, spouse, links, genLabel, onClose }: DetailPanelPr
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
               {person.full_name}
             </h2>
+            {person.alt_name?.trim() && (
+              <div style={{ marginTop: 4, fontSize: 13, fontStyle: 'italic', color: '#64748b' }}>
+                ({person.alt_name.trim()})
+              </div>
+            )}
           </div>
 
           {/* Spouse */}
@@ -445,6 +451,7 @@ export default function FamilyTree({ people, spouses, links }: Props) {
     const person = people.find((p) => p.id === personId);
     const personImg = person?.image_url?.trim() ? person.image_url : PLACEHOLDER;
     const spouseImg = spouse?.image_url?.trim() ? spouse.image_url : PLACEHOLDER;
+    const altName = person?.alt_name?.trim() ?? '';
 
     const personLinks = linksMap.get(personId) ?? [];
     const hasDetails = !!(spouse || personLinks.length > 0);
@@ -533,14 +540,24 @@ export default function FamilyTree({ people, spouses, links }: Props) {
                   }}
                   onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
                 />
-                <span style={{
-                  fontWeight: 700, fontSize: '12px',
-                  color: isHighlighted ? '#78350f' : colors.text,
-                  wordBreak: 'break-word', lineHeight: 1.3,
-                  paddingRight: hasDetails ? '20px' : '0',
-                }}>
-                  {nodeDatum.name}
-                </span>
+                <div style={{ minWidth: 0, paddingRight: hasDetails ? '20px' : '0' }}>
+                  <div style={{
+                    fontWeight: 700, fontSize: '12px',
+                    color: isHighlighted ? '#78350f' : colors.text,
+                    wordBreak: 'break-word', lineHeight: 1.3,
+                  }}>
+                    {nodeDatum.name}
+                  </div>
+                  {altName && (
+                    <div style={{
+                      fontSize: '10px', fontStyle: 'italic',
+                      color: isHighlighted ? '#a16207' : colors.border,
+                      opacity: 0.85, marginTop: '1px', lineHeight: 1.2,
+                    }}>
+                      ({altName})
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Spouse row */}

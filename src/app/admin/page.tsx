@@ -24,6 +24,7 @@ interface Submission {
 interface Person {
   id: string;
   full_name: string;
+  alt_name: string;
   parent_id: string | null;
   tooltip: string;
   image_url: string;
@@ -60,7 +61,7 @@ export default function AdminPage() {
 
   // New person form
   const [newPerson, setNewPerson] = useState({
-    id: '', full_name: '', parent_id: '', tooltip: '', image_url: '',
+    id: '', full_name: '', alt_name: '', parent_id: '', tooltip: '', image_url: '',
   });
   const [addingPerson, setAddingPerson] = useState(false);
 
@@ -178,7 +179,7 @@ export default function AdminPage() {
       });
       if (res.ok) {
         showToast('Person added', true);
-        setNewPerson({ id: '', full_name: '', parent_id: '', tooltip: '', image_url: '' });
+        setNewPerson({ id: '', full_name: '', alt_name: '', parent_id: '', tooltip: '', image_url: '' });
         await fetchAll();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -457,6 +458,7 @@ export default function AdminPage() {
                   {[
                     { key: 'id', label: 'Short ID (unique)', placeholder: 'e.g. john_doe', required: true },
                     { key: 'full_name', label: 'Full Name', placeholder: 'John Doe', required: true },
+                    { key: 'alt_name', label: 'Alt Name (maiden / aka)', placeholder: 'e.g. Joshi' },
                     { key: 'parent_id', label: 'Parent ID', placeholder: 'Leave blank for root' },
                     { key: 'image_url', label: 'Image URL', placeholder: 'https://...' },
                   ].map((f) => (
@@ -510,6 +512,7 @@ export default function AdminPage() {
                     <div className="space-y-3">
                       {[
                         { key: 'full_name', label: 'Full Name' },
+                        { key: 'alt_name', label: 'Alt Name (maiden / aka)' },
                         { key: 'parent_id', label: 'Parent ID' },
                         { key: 'image_url', label: 'Image URL' },
                       ].map((f) => (
@@ -593,7 +596,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => {
                               setEditingPerson(p);
-                              setEditForm({ full_name: p.full_name, parent_id: p.parent_id ?? '', tooltip: p.tooltip, image_url: p.image_url, status: p.status });
+                              setEditForm({ full_name: p.full_name, alt_name: p.alt_name ?? '', parent_id: p.parent_id ?? '', tooltip: p.tooltip, image_url: p.image_url, status: p.status });
                             }}
                             className="text-xs text-blue-600 hover:underline"
                           >
